@@ -495,3 +495,70 @@
     font-size: 1rem;
     cursor: pointer;
 }
+
+/* Crop Modal */
+.crop-modal-overlay {
+    z-index: 2000;
+}
+
+.crop-modal {
+    background: white;
+    border-radius: 16px;
+    width: 95%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.crop-modal h3 {
+    padding: 16px 20px;
+    margin: 0;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 1.1rem;
+}
+
+.crop-container {
+    flex: 1;
+    overflow: auto;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #f3f4f6;
+}
+
+.crop-actions {
+    display: flex;
+    gap: 12px;
+    padding: 16px 20px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.cancel-crop-btn {
+    flex: 1;
+    padding: 14px;
+    background: white;
+    color: #333;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.confirm-crop-btn {
+    flex: 2;
+    padding: 14px;
+    background: var(--primary-gradient);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.confirm-crop-btn:active {
+    transform: scale(0.98);
+}

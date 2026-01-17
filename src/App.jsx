@@ -1,8 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import ReactCrop from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 import 'katex/dist/katex.min.css';
 import './App.css';
 
@@ -19,6 +21,13 @@ function App() {
     const [studentName, setStudentName] = useState(localStorage.getItem('ruidai_student') || "");
     const [instructorName, setInstructorName] = useState(localStorage.getItem('ruidai_instructor') || "");
     const [printDate, setPrintDate] = useState(new Date().toISOString().split('T')[0]);
+
+    // Cropping state
+    const [tempImage, setTempImage] = useState(null);
+    const [showCropModal, setShowCropModal] = useState(false);
+    const [crop, setCrop] = useState({ unit: '%', width: 90, height: 90, x: 5, y: 5 });
+    const [completedCrop, setCompletedCrop] = useState(null);
+    const cropImageRef = useRef(null);
 
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -89,10 +98,59 @@ function App() {
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
             const imageData = canvas.toDataURL('image/png');
-            setImages(prev => [...prev, imageData]);
+            // Show crop modal instead of adding directly
+            setTempImage(imageData);
+            setShowCropModal(true);
             stopCamera();
-            console.log("Image captured and added");
+            console.log("Image captured, showing crop modal");
         }
+    };
+
+    // Get cropped image from canvas
+    const getCroppedImage = useCallback(() => {
+        if (!completedCrop || !cropImageRef.current) return null;
+
+        const image = cropImageRef.current;
+        const canvas = document.createElement('canvas');
+        const scaleX = image.naturalWidth / image.width;
+        const scaleY = image.naturalHeight / image.height;
+
+        canvas.width = completedCrop.width * scaleX;
+        canvas.height = completedCrop.height * scaleY;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(
+            image,
+            completedCrop.x * scaleX,
+            completedCrop.y * scaleY,
+            completedCrop.width * scaleX,
+            completedCrop.height * scaleY,
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+        return canvas.toDataURL('image/png');
+    }, [completedCrop]);
+
+    const confirmCrop = () => {
+        const croppedImage = getCroppedImage();
+        if (croppedImage) {
+            setImages(prev => [...prev, croppedImage]);
+        } else if (tempImage) {
+            // If no crop, use original
+            setImages(prev => [...prev, tempImage]);
+        }
+        setShowCropModal(false);
+        setTempImage(null);
+        setCompletedCrop(null);
+    };
+
+    const cancelCrop = () => {
+        setShowCropModal(false);
+        setTempImage(null);
+        setCompletedCrop(null);
     };
 
     const deleteImage = (index) => {
@@ -144,6 +202,15 @@ function App() {
             const prompt = `あなたは教育のプロフェッショナルです。添付された問題画像を分析し、類似した${questionCount}問の問題を作成してください。
 
 ${customInstructions ? `追加指示: ${customInstructions}` : ''}
+
+【重要】数式の表記について：
+- すべての数式はLaTeX形式で記述してください
+- インライン数式は $...$ で囲んでください（例: $x = 5$）
+- ブロック数式は $$...$$ で囲んでください
+- 平方根は \\sqrt{} を使用してください（例: $\\sqrt{2}$, $\\sqrt{x+1}$）
+- 分数は \\frac{}{} を使用してください（例: $\\frac{1}{2}$）
+- べき乗は ^{} を使用してください（例: $x^{2}$）
+- 教科書と同じ読みやすい表記にしてください
 
 以下の形式で出力してください：
 
@@ -423,6 +490,33 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
                             </select>
                         </div>
                         <button className="primary-btn" onClick={() => setIsSettingsOpen(false)}>閉じる</button>
+                    </div>
+                </div>
+            )}
+
+            {/* Crop Modal */}
+            {showCropModal && tempImage && (
+                <div className="modal-overlay crop-modal-overlay">
+                    <div className="crop-modal">
+                        <h3>📐 トリミング</h3>
+                        <div className="crop-container">
+                            <ReactCrop
+                                crop={crop}
+                                onChange={(c) => setCrop(c)}
+                                onComplete={(c) => setCompletedCrop(c)}
+                            >
+                                <img
+                                    ref={cropImageRef}
+                                    src={tempImage}
+                                    alt="Crop preview"
+                                    style={{ maxWidth: '100%', maxHeight: '60vh' }}
+                                />
+                            </ReactCrop>
+                        </div>
+                        <div className="crop-actions">
+                            <button className="cancel-crop-btn" onClick={cancelCrop}>キャンセル</button>
+                            <button className="confirm-crop-btn" onClick={confirmCrop}>✓ 確定</button>
+                        </div>
                     </div>
                 </div>
             )}
