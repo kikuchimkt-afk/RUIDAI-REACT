@@ -1,0 +1,27 @@
+/* RUIDAI React - Modern Tablet UI */
+:root {
+    --primary-color: #6366f1;
+    --primary-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    --bg-color: #f3f4f6;
+    --text-main: #1f2937;
+    --text-sub: #6b7280;
+    --radius-lg: 20px;
+    --radius-md: 12px;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: 'Zen Kaku Gothic New', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #eef2f6;
+    color: var(--text-main);
+}
+
+#root {
+    min-height: 100vh;
+}
