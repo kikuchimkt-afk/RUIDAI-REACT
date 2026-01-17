@@ -393,12 +393,15 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
           <meta charset="UTF-8">
           <title>${title} - RUIDAI</title>
           <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+          <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+          <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
           <style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
             body { 
               font-family: 'Noto Sans JP', sans-serif; 
               padding: 20px; 
-              line-height: 1.6;
+              line-height: 1.8;
+              font-size: 14px;
             }
             .print-header { 
               display: flex; 
@@ -445,6 +448,9 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
               transition: transform 0.2s;
             }
             
+            /* Math styling */
+            .katex { font-size: 1.1em; }
+            
             @media print {
               .print-controls { display: none !important; }
               body { padding: 0; }
@@ -473,8 +479,20 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
               content.style.width = (10000 / value) + '%';
             }
             
-            // Auto-fit on load
+            // Render math and auto-fit on load
             window.onload = function() {
+              // Render LaTeX math
+              if (typeof renderMathInElement !== 'undefined') {
+                renderMathInElement(document.getElementById('print-content'), {
+                  delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false}
+                  ],
+                  throwOnError: false
+                });
+              }
+              
+              // Auto-fit to page
               const content = document.getElementById('print-content');
               const pageHeight = 277 * 3.78; // A4 height in pixels
               const contentHeight = content.scrollHeight;
