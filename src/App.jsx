@@ -193,6 +193,201 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
         }
     };
 
+    // ========== Print Preview Function ==========
+    const openPrintPreview = (mode) => {
+        if (!result) return;
+
+        // Parse result sections
+        const problemMatch = result.match(/## 問題([\s\S]*?)(?=---|\n## |$)/);
+        const solutionMatch = result.match(/## 解答・解説([\s\S]*?)(?=---|\n## |$)/);
+        const instructorMatch = result.match(/## 講師向けガイド([\s\S]*?)$/);
+
+        const problemContent = problemMatch ? problemMatch[1].trim() : '';
+        const solutionContent = solutionMatch ? solutionMatch[1].trim() : '';
+        const instructorContent = instructorMatch ? instructorMatch[1].trim() : '';
+
+        // Build content based on mode
+        let printContent = '';
+        let title = '';
+
+        switch (mode) {
+            case 'problem':
+                printContent = `<h2>問題</h2>${markdownToHtml(problemContent)}`;
+                title = '問題';
+                break;
+            case 'solution':
+                printContent = `<h2>解答・解説</h2>${markdownToHtml(solutionContent)}`;
+                title = '解答・解説';
+                break;
+            case 'full':
+                printContent = `<h2>問題</h2>${markdownToHtml(problemContent)}<hr/><h2>解答・解説</h2>${markdownToHtml(solutionContent)}`;
+                title = '問題と解答';
+                break;
+            case 'instructor':
+                printContent = `<h2>講師向けガイド</h2>${markdownToHtml(instructorContent)}`;
+                title = '講師向けガイド';
+                break;
+            default:
+                printContent = markdownToHtml(result);
+                title = '類題';
+        }
+
+        // Header with student/instructor info
+        const headerHtml = `
+      <div class="print-header">
+        <div class="header-left">
+          <span class="date">${printDate}</span>
+          <span class="student">${studentName ? '生徒: ' + studentName : ''}</span>
+        </div>
+        <div class="header-right">
+          <span class="instructor">${instructorName ? '講師: ' + instructorName : ''}</span>
+        </div>
+      </div>
+    `;
+
+        // Scale-to-fit JavaScript
+        const scaleScript = `
+      <script>
+        function scaleToFit() {
+          const content = document.getElementById('print-content');
+          if (!content) return;
+          
+          // A4 paper dimensions (in mm, converted to pixels at 96 DPI)
+          const pageHeight = 277 * 3.78; // ~1047px (A4 height minus margins)
+          const contentHeight = content.scrollHeight;
+          
+          if (contentHeight > pageHeight) {
+            const scale = pageHeight / contentHeight;
+            content.style.transform = 'scale(' + scale + ')';
+            content.style.transformOrigin = 'top left';
+            content.style.width = (100 / scale) + '%';
+          }
+        }
+        window.onload = scaleToFit;
+        window.onbeforeprint = scaleToFit;
+      </script>
+    `;
+
+        const printHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${title} - RUIDAI</title>
+          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+          <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { 
+              font-family: 'Noto Sans JP', sans-serif; 
+              padding: 20px; 
+              line-height: 1.6;
+            }
+            .print-header { 
+              display: flex; 
+              justify-content: space-between; 
+              border-bottom: 2px solid #333; 
+              padding-bottom: 10px; 
+              margin-bottom: 20px; 
+            }
+            .print-controls { 
+              position: fixed; 
+              top: 10px; 
+              right: 10px; 
+              display: flex; 
+              gap: 10px;
+              z-index: 1000;
+            }
+            .print-controls button {
+              padding: 10px 20px;
+              border: none;
+              border-radius: 5px;
+              cursor: pointer;
+              font-size: 14px;
+            }
+            .print-btn { background: #6366f1; color: white; }
+            .close-btn { background: #6b7280; color: white; }
+            
+            /* Scale slider */
+            .scale-control {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              padding: 5px 15px;
+              background: white;
+              border-radius: 5px;
+              border: 1px solid #ddd;
+            }
+            .scale-control input { width: 100px; }
+            
+            h2 { color: #6366f1; margin: 20px 0 10px; }
+            h3 { margin: 15px 0 8px; }
+            hr { margin: 20px 0; border: 1px dashed #ccc; }
+            
+            #print-content {
+              transition: transform 0.2s;
+            }
+            
+            @media print {
+              .print-controls { display: none !important; }
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-controls">
+            <div class="scale-control">
+              <label>サイズ: <span id="scale-value">100</span>%</label>
+              <input type="range" id="scale-slider" min="50" max="150" value="100" oninput="updateScale(this.value)">
+            </div>
+            <button class="print-btn" onclick="window.print()">🖨️ 印刷</button>
+            <button class="close-btn" onclick="window.close()">✕ 閉じる</button>
+          </div>
+          ${headerHtml}
+          <div id="print-content">
+            ${printContent}
+          </div>
+          <script>
+            function updateScale(value) {
+              document.getElementById('scale-value').textContent = value;
+              const content = document.getElementById('print-content');
+              content.style.transform = 'scale(' + (value / 100) + ')';
+              content.style.transformOrigin = 'top left';
+              content.style.width = (10000 / value) + '%';
+            }
+            
+            // Auto-fit on load
+            window.onload = function() {
+              const content = document.getElementById('print-content');
+              const pageHeight = 277 * 3.78; // A4 height in pixels
+              const contentHeight = content.scrollHeight;
+              
+              if (contentHeight > pageHeight) {
+                const scale = Math.floor((pageHeight / contentHeight) * 100);
+                document.getElementById('scale-slider').value = scale;
+                updateScale(scale);
+              }
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(printHtml);
+        printWindow.document.close();
+    };
+
+    // Simple markdown to HTML converter
+    const markdownToHtml = (md) => {
+        if (!md) return '';
+        return md
+            .replace(/### (.*?)$/gm, '<h3>$1</h3>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/\n\n/g, '<br/><br/>')
+            .replace(/\n/g, '<br/>');
+    };
+
     return (
         <div className="app">
             {/* Header */}
@@ -273,33 +468,51 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
 
                     {/* Config */}
                     <div className="config-section">
-                        <div className="form-group">
-                            <label>問題数:</label>
-                            <input
-                                type="number"
-                                min="1"
-                                max="10"
-                                value={questionCount}
-                                onChange={(e) => setQuestionCount(parseInt(e.target.value) || 3)}
-                            />
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label>日付:</label>
+                                <input
+                                    type="date"
+                                    value={printDate}
+                                    onChange={(e) => setPrintDate(e.target.value)}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>問題数:</label>
+                                <div className="number-stepper">
+                                    <button
+                                        type="button"
+                                        onClick={() => setQuestionCount(Math.max(1, questionCount - 1))}
+                                        className="stepper-btn"
+                                    >−</button>
+                                    <span className="stepper-value">{questionCount}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setQuestionCount(Math.min(10, questionCount + 1))}
+                                        className="stepper-btn"
+                                    >+</button>
+                                </div>
+                            </div>
                         </div>
-                        <div className="form-group">
-                            <label>生徒名:</label>
-                            <input
-                                type="text"
-                                value={studentName}
-                                onChange={(e) => setStudentName(e.target.value)}
-                                placeholder="生徒名"
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label>講師名:</label>
-                            <input
-                                type="text"
-                                value={instructorName}
-                                onChange={(e) => setInstructorName(e.target.value)}
-                                placeholder="講師名"
-                            />
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label>生徒名:</label>
+                                <input
+                                    type="text"
+                                    value={studentName}
+                                    onChange={(e) => setStudentName(e.target.value)}
+                                    placeholder="生徒名"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>講師名:</label>
+                                <input
+                                    type="text"
+                                    value={instructorName}
+                                    onChange={(e) => setInstructorName(e.target.value)}
+                                    placeholder="講師名"
+                                />
+                            </div>
                         </div>
                         <div className="preset-chips">
                             {PRESETS.map(preset => (
@@ -332,7 +545,17 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
 
                 {/* Right Panel - Result */}
                 <section className="right-panel">
-                    <h2>結果</h2>
+                    <div className="result-header">
+                        <h2>結果</h2>
+                        {result && (
+                            <div className="print-buttons">
+                                <button className="print-chip" onClick={() => openPrintPreview('problem')}>🖨️ 問題</button>
+                                <button className="print-chip" onClick={() => openPrintPreview('solution')}>🖨️ 解答</button>
+                                <button className="print-chip" onClick={() => openPrintPreview('full')}>🖨️ 全て</button>
+                                <button className="print-chip" onClick={() => openPrintPreview('instructor')}>🖨️ 講師用</button>
+                            </div>
+                        )}
+                    </div>
                     {loading ? (
                         <div className="loading">
                             <div className="spinner"></div>
@@ -356,3 +579,4 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
 }
 
 export default App;
+
