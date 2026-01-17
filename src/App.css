@@ -93,7 +93,13 @@
 
 .upload-area p {
     color: var(--text-sub);
-    margin-bottom: 15px;
+    margin-bottom: 5px;
+}
+
+.hint-text {
+    font-size: 0.8rem;
+    color: #9ca3af;
+    margin-bottom: 15px !important;
 }
 
 .start-camera-btn {

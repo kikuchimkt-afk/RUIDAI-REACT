@@ -157,6 +157,48 @@ function App() {
         setImages(prev => prev.filter((_, i) => i !== index));
     };
 
+    // Long press timer ref
+    const longPressTimer = useRef(null);
+
+    // Paste from clipboard (for long press)
+    const pasteFromClipboard = async () => {
+        try {
+            const clipboardItems = await navigator.clipboard.read();
+            for (const item of clipboardItems) {
+                for (const type of item.types) {
+                    if (type.startsWith('image/')) {
+                        const blob = await item.getType(type);
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            setTempImage(event.target.result);
+                            setShowCropModal(true);
+                        };
+                        reader.readAsDataURL(blob);
+                        return;
+                    }
+                }
+            }
+            alert("クリップボードに画像がありません");
+        } catch (err) {
+            console.error("Clipboard read failed:", err);
+            alert("クリップボードからの読み取りに失敗しました。ブラウザの設定を確認してください。");
+        }
+    };
+
+    // Long press handlers
+    const handleTouchStart = () => {
+        longPressTimer.current = setTimeout(() => {
+            pasteFromClipboard();
+        }, 800); // 800ms for long press
+    };
+
+    const handleTouchEnd = () => {
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
+    };
+
     // Paste handler
     useEffect(() => {
         const handlePaste = (e) => {
@@ -199,28 +241,31 @@ function App() {
                 }
             }));
 
-            const prompt = `あなたは教育のプロフェッショナルです。添付された問題画像を分析し、類似した${questionCount}問の問題を作成してください。
+            const prompt = `あなたは中学生向けの教育のプロフェッショナルです。添付された問題画像を分析し、類似した${questionCount}問の問題を作成してください。
 
 ${customInstructions ? `追加指示: ${customInstructions}` : ''}
 
-【重要】数式の表記について：
-- すべての数式はLaTeX形式で記述してください
-- インライン数式は $...$ で囲んでください（例: $x = 5$）
-- ブロック数式は $$...$$ で囲んでください
-- 平方根は \\sqrt{} を使用してください（例: $\\sqrt{2}$, $\\sqrt{x+1}$）
-- 分数は \\frac{}{} を使用してください（例: $\\frac{1}{2}$）
-- べき乗は ^{} を使用してください（例: $x^{2}$）
-- 教科書と同じ読みやすい表記にしてください
+【絶対厳守】数式の書き方：
+- 数式は必ず LaTeX 形式で書いてください
+- 数式の前後にはスペースを入れてください
+- 例: 答えは $x = 3$ です。（正しい）
+- 例: 答えは$x=3$です。（間違い - スペースがない）
+- 複数の解がある場合: $x = 3$ または $x = -5$
+- 平方根: $\\sqrt{2}$ や $\\sqrt{x+1}$
+- 分数: $\\frac{1}{2}$ や $\\frac{a}{b}$
+- べき乗: $x^2$ や $a^3$
+- 因数分解: $(x + 5)(x - 3) = 0$
+- 必ず $ の前後にスペースを入れてください
 
 以下の形式で出力してください：
 
 ## 問題
 
 ### 問題1
-[問題文]
+[問題文をここに書く]
 
 ### 問題2
-[問題文]
+[問題文をここに書く]
 
 (以下同様)
 
@@ -229,12 +274,18 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
 ## 解答・解説
 
 ### 問題1の解答
-**答え:** [答え]
-**解説:** [解説]
+**答え:** $x = [値]$
+**解説:**
+1. [ステップ1]
+2. [ステップ2]
+...
 
 ### 問題2の解答
-**答え:** [答え]
-**解説:** [解説]
+**答え:** $x = [値]$
+**解説:**
+1. [ステップ1]
+2. [ステップ2]
+...
 
 (以下同様)
 
@@ -535,9 +586,18 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
                             </div>
                         </div>
                     ) : (
-                        <div className="upload-area" onClick={startCamera}>
+                        <div
+                            className="upload-area"
+                            onClick={startCamera}
+                            onTouchStart={handleTouchStart}
+                            onTouchEnd={handleTouchEnd}
+                            onMouseDown={handleTouchStart}
+                            onMouseUp={handleTouchEnd}
+                            onMouseLeave={handleTouchEnd}
+                        >
                             <div className="drop-icon">📸</div>
-                            <p>タップでカメラを起動</p>
+                            <p>タップでカメラ起動</p>
+                            <p className="hint-text">長押しでクリップボードから貼付</p>
                             <button className="start-camera-btn" onClick={(e) => { e.stopPropagation(); startCamera(); }}>
                                 カメラを起動
                             </button>
