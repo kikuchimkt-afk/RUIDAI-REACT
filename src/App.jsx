@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -20,7 +21,15 @@ function App() {
     const [customInstructions, setCustomInstructions] = useState("");
     const [studentName, setStudentName] = useState(localStorage.getItem('ruidai_student') || "");
     const [instructorName, setInstructorName] = useState(localStorage.getItem('ruidai_instructor') || "");
-    const [printDate, setPrintDate] = useState(new Date().toISOString().split('T')[0]);
+
+    // Sheet info
+    const [sheetTitle, setSheetTitle] = useState("");
+    const [assignDate, setAssignDate] = useState(new Date().toISOString().split('T')[0]);
+    const [dueDate, setDueDate] = useState("");
+
+    // Saved sheets
+    const [savedSheets, setSavedSheets] = useState([]);
+    const [showSavedListModal, setShowSavedListModal] = useState(false);
 
     // Cropping state
     const [tempImage, setTempImage] = useState(null);
@@ -39,6 +48,18 @@ function App() {
         { label: "解説重視", value: "解説を詳しくして" },
     ];
 
+    // Load saved sheets from localStorage on mount
+    useEffect(() => {
+        const saved = localStorage.getItem('ruidai_saved_sheets');
+        if (saved) {
+            try {
+                setSavedSheets(JSON.parse(saved));
+            } catch (e) {
+                console.error('Error loading saved sheets:', e);
+            }
+        }
+    }, []);
+
     // Save settings to localStorage
     useEffect(() => {
         localStorage.setItem('ruidai_api_key', apiKey);
@@ -46,6 +67,47 @@ function App() {
         localStorage.setItem('ruidai_student', studentName);
         localStorage.setItem('ruidai_instructor', instructorName);
     }, [apiKey, model, studentName, instructorName]);
+
+    // Save current sheet to localStorage
+    const saveSheet = () => {
+        if (!result) {
+            alert('保存する内容がありません');
+            return;
+        }
+        const newSheet = {
+            id: Date.now(),
+            title: sheetTitle || '無題',
+            studentName,
+            instructorName,
+            assignDate,
+            dueDate,
+            result,
+            createdAt: new Date().toISOString()
+        };
+        const updatedSheets = [...savedSheets, newSheet];
+        setSavedSheets(updatedSheets);
+        localStorage.setItem('ruidai_saved_sheets', JSON.stringify(updatedSheets));
+        alert('保存しました！');
+    };
+
+    // Load a saved sheet
+    const loadSheet = (sheet) => {
+        setSheetTitle(sheet.title);
+        setStudentName(sheet.studentName || '');
+        setInstructorName(sheet.instructorName || '');
+        setAssignDate(sheet.assignDate || '');
+        setDueDate(sheet.dueDate || '');
+        setResult(sheet.result);
+        setShowSavedListModal(false);
+    };
+
+    // Delete a saved sheet
+    const deleteSheet = (id) => {
+        if (!confirm('この問題シートを削除しますか？')) return;
+        const updatedSheets = savedSheets.filter(s => s.id !== id);
+        setSavedSheets(updatedSheets);
+        localStorage.setItem('ruidai_saved_sheets', JSON.stringify(updatedSheets));
+    };
 
     // Initialize camera when isCameraOpen changes
     useEffect(() => {
@@ -256,6 +318,7 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
 - べき乗: $x^2$ や $a^3$
 - 因数分解: $(x + 5)(x - 3) = 0$
 - 必ず $ の前後にスペースを入れてください
+- 化学式（例: $ZnSO_4$）などは途中で改行しないでください
 
 以下の形式で出力してください：
 
@@ -328,207 +391,280 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
         let printContent = '';
         let title = '';
 
+        const renderSection = (sectionTitle, content) => {
+            return `
+                <div class="print-section">
+                    <h2>${sectionTitle}</h2>
+                    ${markdownToHtml(content)}
+                </div>
+            `;
+        };
+
+        // Header generation helper (similar to Vanilla)
+        const getHeader = (showScore = true) => {
+            const dateStr = assignDate ? new Date(assignDate).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+            return `
+            <div class="print-header">
+              <div class="header-top">
+                 <h1 class="main-title" id="displayTitle">${title}</h1>
+              </div>
+              <div class="header-bottom">
+                  <div class="header-left">
+                    ${dateStr ? `<span class="date">${dateStr}</span>` : ''}
+                    <div class="names">
+                        ${studentName ? `<span class="student">生徒: ${studentName}</span>` : ''}
+                        ${instructorName ? `<span class="instructor">講師: ${instructorName}</span>` : ''}
+                    </div>
+                  </div>
+                  
+                  <div class="header-right">
+                    ${showScore ? `
+                    <div class="score-box">
+                         <div class="score-item">目標時間<div class="score-line"></div>分</div>
+                         <div class="score-item">得点<div class="score-line"></div>/100</div>
+                    </div>` : ''}
+                  </div>
+              </div>
+            </div>
+            `;
+        };
+
         switch (mode) {
             case 'problem':
-                printContent = `<h2>問題</h2>${markdownToHtml(problemContent)}`;
                 title = '問題';
+                printContent = `
+                    ${getHeader(true)}
+                    ${renderSection('問題', problemContent)}
+                `;
                 break;
             case 'solution':
-                printContent = `<h2>解答・解説</h2>${markdownToHtml(solutionContent)}`;
                 title = '解答・解説';
+                printContent = `
+                    ${getHeader(false)}
+                    ${renderSection('解答・解説', solutionContent)}
+                `;
                 break;
             case 'full':
-                printContent = `<h2>問題</h2>${markdownToHtml(problemContent)}<hr/><h2>解答・解説</h2>${markdownToHtml(solutionContent)}`;
-                title = '問題と解答';
+                title = '類題プリント';
+                printContent = `
+                    ${getHeader(true)}
+                    ${renderSection('問題', problemContent)}
+                    <div class="page-break"></div>
+                    ${getHeader(false)}
+                    ${renderSection('解答・解説', solutionContent)}
+                    <div class="page-break"></div>
+                    ${getHeader(false)}
+                    ${renderSection('講師向けガイド', instructorContent)}
+                `;
                 break;
             case 'instructor':
-                printContent = `<h2>講師向けガイド</h2>${markdownToHtml(instructorContent)}`;
                 title = '講師向けガイド';
+                printContent = `
+                    ${getHeader(false)}
+                    ${renderSection('講師向けガイド', instructorContent)}
+                `;
                 break;
             default:
-                printContent = markdownToHtml(result);
                 title = '類題';
+                printContent = markdownToHtml(result);
         }
 
-        // Header with student/instructor info
-        const headerHtml = `
-      <div class="print-header">
-        <div class="header-left">
-          <span class="date">${printDate}</span>
-          <span class="student">${studentName ? '生徒: ' + studentName : ''}</span>
-        </div>
-        <div class="header-right">
-          <span class="instructor">${instructorName ? '講師: ' + instructorName : ''}</span>
-        </div>
-      </div>
-    `;
+        const printWindow = window.open('', '_blank');
 
-        // Scale-to-fit JavaScript
-        const scaleScript = `
-      <script>
-        function scaleToFit() {
-          const content = document.getElementById('print-content');
-          if (!content) return;
-          
-          // A4 paper dimensions (in mm, converted to pixels at 96 DPI)
-          const pageHeight = 277 * 3.78; // ~1047px (A4 height minus margins)
-          const contentHeight = content.scrollHeight;
-          
-          if (contentHeight > pageHeight) {
-            const scale = pageHeight / contentHeight;
-            content.style.transform = 'scale(' + scale + ')';
-            content.style.transformOrigin = 'top left';
-            content.style.width = (100 / scale) + '%';
-          }
-        }
-        window.onload = scaleToFit;
-        window.onbeforeprint = scaleToFit;
-      </script>
-    `;
+        // Copy all styles from current document
+        const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+            .map(node => node.outerHTML)
+            .join('');
 
         const printHtml = `
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>${title} - RUIDAI</title>
-          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-          <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-          <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+          <title>${title} - RUIDAI (Print)</title>
+          ${styles}
           <style>
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { 
-              font-family: 'Noto Sans JP', sans-serif; 
-              padding: 20px; 
-              line-height: 1.8;
-              font-size: 14px;
-            }
-            .print-header { 
-              display: flex; 
-              justify-content: space-between; 
-              border-bottom: 2px solid #333; 
-              padding-bottom: 10px; 
-              margin-bottom: 20px; 
-            }
-            .print-controls { 
-              position: fixed; 
-              top: 10px; 
-              right: 10px; 
-              display: flex; 
-              gap: 10px;
-              z-index: 1000;
-            }
-            .print-controls button {
-              padding: 10px 20px;
-              border: none;
-              border-radius: 5px;
-              cursor: pointer;
-              font-size: 14px;
-            }
-            .print-btn { background: #6366f1; color: white; }
-            .close-btn { background: #6b7280; color: white; }
+            @import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap');
             
-            /* Scale slider */
-            .scale-control {
-              display: flex;
-              align-items: center;
-              gap: 10px;
+            body {
+                background: #e5e7eb !important; /* Gray background for preview */
+                margin: 0;
+                padding: 0;
+                padding-top: 80px; /* Space for controls */
+                color: #333;
+                font-family: 'Zen Maru Gothic', sans-serif;
+            }
+            .print-wrapper {
+                max-width: 210mm;
+                margin: 0 auto;
+                padding: 15mm;
+                padding-bottom: 20mm; /* Space for footer */
+                background: white;
+                min-height: 297mm;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                position: relative;
+            }
+            
+            /* Section Styling */
+            .result-content { line-height: 1.6; }
+            .print-section { margin-bottom: 20px; }
+            
+            h2 {
+                margin-bottom: 1rem;
+                font-size: 1.25rem;
+                color: #333;
+                border-left: 5px solid #888;
+                padding-left: 10px;
+                margin-top: 0;
+            }
+            
+            /* Header Styling */
+            .print-header {
+              margin-bottom: 20px;
+              border-bottom: 2px solid #333;
+              padding-bottom: 5px;
+            }
+            .header-top { text-align: center; margin-bottom: 10px; }
+            .main-title { font-size: 24px; margin: 0; letter-spacing: 2px; }
+            .header-bottom { display: flex; justify-content: space-between; align-items: flex-end; }
+            .header-left .date { font-weight: 500; margin-right: 15px; }
+            .names { display: inline-flex; gap: 15px; }
+            .score-box {
+              border: 2px solid #333;
+              border-radius: 8px;
               padding: 5px 15px;
-              background: white;
-              border-radius: 5px;
-              border: 1px solid #ddd;
+              display: flex;
+              gap: 20px;
+              background: #fff;
             }
-            .scale-control input { width: 100px; }
+            .score-item { font-size: 14px; display: flex; align-items: flex-end; }
+            .score-line { border-bottom: 1px solid #333; width: 60px; margin-left: 5px; }
             
-            h2 { color: #6366f1; margin: 20px 0 10px; }
-            h3 { margin: 15px 0 8px; }
-            hr { margin: 20px 0; border: 1px dashed #ccc; }
-            
-            #print-content {
-              transition: transform 0.2s;
+            .page-break {
+                page-break-after: always;
+                height: 0;
+                display: block;
+                border: none;
             }
             
-            /* Math styling */
-            .katex { font-size: 1.1em; }
-            
+            /* Footer */
+            .print-footer {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                width: 100%;
+                text-align: center;
+                font-size: 10px;
+                color: #666;
+                padding-bottom: 5mm;
+                background-color: rgba(255, 255, 255, 0.9);
+                z-index: 1000;
+            }
+
+            /* Controls */
+            .print-controls {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 60px;
+                background: #f3f4f6;
+                border-bottom: 1px solid #d1d5db;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 20px;
+                box-sizing: border-box;
+                z-index: 9999;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            }
+            .control-group { display: flex; align-items: center; gap: 15px; }
+            .control-group label { font-weight: bold; color: #374151; }
+            input[type=range] { width: 150px; cursor: pointer; }
+            input[type=text] { padding: 5px; border-radius: 4px; border: 1px solid #ccc; width: 150px; }
+            .buttons { display: flex; gap: 10px; }
+            .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; transition: opacity 0.2s; }
+            .btn-print { background: #4f46e5; color: white; }
+            .btn-close { background: #6b7280; color: white; }
+            .btn:hover { opacity: 0.9; }
+
+            @page {
+                size: A4 portrait;
+                margin: 10mm;
+            }
+
             @media print {
-              .print-controls { display: none !important; }
-              body { padding: 0; }
+                .print-controls { display: none !important; }
+                body { padding-top: 0 !important; background: white !important; }
+                .print-wrapper { width: 100%; max-width: none; margin: 0; padding: 0; box-shadow: none; padding-bottom: 0; }
+                .print-footer { display: block !important; }
             }
           </style>
         </head>
         <body>
           <div class="print-controls">
-            <div class="scale-control">
-              <label>サイズ: <span id="scale-value">100</span>%</label>
-              <input type="range" id="scale-slider" min="50" max="150" value="100" oninput="updateScale(this.value)">
+            <div class="control-group">
+                <label>タイトル:</label>
+                <input type="text" id="titleInput" value="${title}">
+                
+                <label style="margin-left: 15px;">サイズ: <span id="scaleVal">100%</span></label>
+                <input type="range" id="scaleSlider" min="50" max="150" value="100" step="5">
             </div>
-            <button class="print-btn" onclick="window.print()">🖨️ 印刷</button>
-            <button class="close-btn" onclick="window.close()">✕ 閉じる</button>
+            <div class="buttons">
+                <button class="btn btn-print" onclick="window.print()">🖨️ 印刷</button>
+                <button class="btn btn-close" onclick="window.close()">✕ 閉じる</button>
+            </div>
           </div>
-          ${headerHtml}
-          <div id="print-content">
-            ${printContent}
+
+          <div class="print-wrapper result-content">
+             ${printContent}
+             <div class="print-footer">
+                ©ECCベストワン藍住・北島中央
+             </div>
           </div>
+          
           <script>
-            function updateScale(value) {
-              document.getElementById('scale-value').textContent = value;
-              const content = document.getElementById('print-content');
-              content.style.transform = 'scale(' + (value / 100) + ')';
-              content.style.transformOrigin = 'top left';
-              content.style.width = (10000 / value) + '%';
-            }
+            const slider = document.getElementById('scaleSlider');
+            const label = document.getElementById('scaleVal');
+            const titleInput = document.getElementById('titleInput');
             
-            // Render math and auto-fit on load
-            window.onload = function() {
-              // Render LaTeX math
-              if (typeof renderMathInElement !== 'undefined') {
-                renderMathInElement(document.getElementById('print-content'), {
-                  delimiters: [
-                    {left: '$$', right: '$$', display: true},
-                    {left: '$', right: '$', display: false}
-                  ],
-                  throwOnError: false
-                });
-              }
-              
-              // Auto-fit to page
-              const content = document.getElementById('print-content');
-              const pageHeight = 277 * 3.78; // A4 height in pixels
-              const contentHeight = content.scrollHeight;
-              
-              if (contentHeight > pageHeight) {
-                const scale = Math.floor((pageHeight / contentHeight) * 100);
-                document.getElementById('scale-slider').value = scale;
-                updateScale(scale);
-              }
-            };
+            slider.addEventListener('input', (e) => {
+                const val = e.target.value;
+                label.textContent = val + '%';
+                document.body.style.zoom = val + '%';
+            });
+            
+            titleInput.addEventListener('input', (e) => {
+                const newTitle = e.target.value;
+                document.querySelectorAll('.main-title').forEach(el => el.textContent = newTitle);
+                document.title = newTitle;
+            });
           </script>
         </body>
       </html>
     `;
 
-        const printWindow = window.open('', '_blank');
         printWindow.document.write(printHtml);
         printWindow.document.close();
     };
 
-    // Simple markdown to HTML converter
+    // Simple markdown to HTML converter using ReactMarkdown
     const markdownToHtml = (md) => {
         if (!md) return '';
-        return md
-            .replace(/### (.*?)$/gm, '<h3>$1</h3>')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/\n\n/g, '<br/><br/>')
-            .replace(/\n/g, '<br/>');
+        // Remove trailing spaces to prevent hard breaks
+        const cleanMd = md.replace(/ +$/gm, '');
+        return renderToStaticMarkup(
+            <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                {cleanMd}
+            </ReactMarkdown>
+        );
     };
 
     return (
         <div className="app">
             {/* Header */}
             <header className="header">
-                <h1>RUIDAI <span className="badge">React</span></h1>
+                <h1>RUIDAI <span className="badge">Mobile</span></h1>
                 <button className="settings-btn" onClick={() => setIsSettingsOpen(true)}>⚙️</button>
             </header>
 
@@ -645,8 +781,8 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
                                 <label>日付:</label>
                                 <input
                                     type="date"
-                                    value={printDate}
-                                    onChange={(e) => setPrintDate(e.target.value)}
+                                    value={assignDate}
+                                    onChange={(e) => setAssignDate(e.target.value)}
                                 />
                             </div>
                             <div className="form-group">
