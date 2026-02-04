@@ -294,7 +294,12 @@ function App() {
         setLoading(true);
         try {
             const genAI = new GoogleGenerativeAI(apiKey);
-            const genModel = genAI.getGenerativeModel({ model });
+            const genModel = genAI.getGenerativeModel({
+                model,
+                generationConfig: {
+                    maxOutputTokens: 8192,
+                }
+            });
 
             const imagesParts = images.map(img => ({
                 inlineData: {
@@ -379,13 +384,17 @@ ${customInstructions ? `追加指示: ${customInstructions}` : ''}
         if (!result) return;
 
         // Parse result sections
-        const problemMatch = result.match(/## 問題([\s\S]*?)(?=---|\n## |$)/);
-        const solutionMatch = result.match(/## 解答・解説([\s\S]*?)(?=---|\n## |$)/);
+        // Parse result sections with robust regex
+        const problemMatch = result.match(/## 問題([\s\S]*?)(?=## 解答・解説|$)/);
+        const solutionMatch = result.match(/## 解答・解説([\s\S]*?)(?=## 講師向けガイド|$)/);
         const instructorMatch = result.match(/## 講師向けガイド([\s\S]*?)$/);
 
-        const problemContent = problemMatch ? problemMatch[1].trim() : '';
-        const solutionContent = solutionMatch ? solutionMatch[1].trim() : '';
-        const instructorContent = instructorMatch ? instructorMatch[1].trim() : '';
+        // Remove potential trailing horizontal rules used as separators
+        const cleanSection = (text) => text.replace(/[\r\n]+---[\r\n]*$/, '').trim();
+
+        const problemContent = problemMatch ? cleanSection(problemMatch[1]) : '';
+        const solutionContent = solutionMatch ? cleanSection(solutionMatch[1]) : '';
+        const instructorContent = instructorMatch ? cleanSection(instructorMatch[1]) : '';
 
         // Build content based on mode
         let printContent = '';
